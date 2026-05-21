@@ -257,6 +257,7 @@ export async function parseId(
   const raw = input.trim();
   const err = () => new AppError(i18n.global.t('error.invalidInput'));
 
+  // parse common id formats first
   if (/^(av\d+|BV\w{10}|ep\d+|ss\d+|md\d+|au\d+|am\d+|cv\d+)$/i.test(raw)) {
     const map: Record<string, MediaType> = {
       av: MediaType.Video,
@@ -271,6 +272,9 @@ export async function parseId(
     return { id: raw, type: map[prefix] ?? null };
   }
 
+  // then try URL parsing for more complex cases
+
+  // check if the input contains a valid URL, and build a URL object from it
   let url: URL;
   try {
     const picked = input
@@ -298,12 +302,13 @@ export async function parseId(
     throw err();
   }
   const host = url.hostname.toLowerCase();
+  // only allow URLs from *.bilibili.com and b23.tv to prevent SSRF risks
   if (!/^(?:([a-z0-9-]+\.)*bilibili\.com|b23\.tv)$/i.test(host)) {
     throw err();
   }
   const segs = url.pathname.slice(1).split('/');
   const prms = url.searchParams;
-
+  // recursively parse the URL redirected by b23.tv
   if (host === 'b23.tv') {
     return await parseId(await tryFetch(raw, { type: 'url' }));
   }
@@ -346,6 +351,7 @@ export async function parseId(
     throw err();
   }
 
+  // parse different types of links separately
   let type = segs[0];
   let id = segs[1];
   if (/^(BV\w{10}|av\d+)$/i.test(id))
@@ -380,6 +386,29 @@ export async function parseId(
     };
   }
 
+  // for list
+  // example: https://www.bilibili.com/list/ml2996876205?bvid=BV1QUjSzDETJ
+  if (type === 'list') {
+    if (prms.has('bvid'))
+      return {
+        id: prms.get('bvid')!,
+        type: MediaType.Video,
+      };
+    else {
+      const result: { id: string; type?: MediaType; target?: number }[] = [];
+      prms.forEach((value,) => {
+        const match = value.match(/(BV\w{10}|av\d+)/i);
+        if (match)
+          result.push({
+            id: match[0],
+            type: MediaType.Video,
+          });
+      });
+      if (result.length > 0)
+        return result[0]; // if there are multiple valid video IDs, return the first one
+    }
+  }
+
   id = segs[2];
   if (/(ep\d+|ss\d+|md\d+)/i.test(id)) {
     if (type === 'bangumi')
@@ -410,6 +439,8 @@ export async function parseId(
         type: MediaType.Video,
       };
   }
+
+
   throw err();
 }
 
