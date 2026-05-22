@@ -392,6 +392,7 @@ export async function parseId(
     if (prms.has('bvid'))
       return {
         id: prms.get('bvid')!,
+        target: /^ml\d+$/i.test(id) ? Number(id.slice(2)) : undefined,
         type: MediaType.Video,
       };
     else {
@@ -401,6 +402,7 @@ export async function parseId(
         if (match)
           result.push({
             id: match[0],
+            target: /^ml\d+$/i.test(id) ? Number(id.slice(2)) : undefined,
             type: MediaType.Video,
           });
       });

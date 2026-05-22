@@ -14,7 +14,7 @@ import * as Types from '@/types/shared.d';
 export async function getMediaInfo(
   id: string,
   type: Types.MediaType,
-  options?: { pn?: number; offset?: string; target?: number },
+  options?: { pn?: number; offset?: string; target?: number }, // mlMediaId is something like mlxxxxxxxxxx(in which x is digit)
 ): Promise<Types.MediaInfo> {
   let url = 'https://api.bilibili.com';
   let params = {};
@@ -92,6 +92,18 @@ export async function getMediaInfo(
       params = { uid: idNum, ps: 42, pn: options?.pn ?? 1 };
       break;
   }
+
+  // {
+  //   const url = 'https://api.bilibili.com/x/v3/fav/folder/created/list-all';
+  //   const params = { up_mid: idNum };
+  //   const body = await tryFetch(url, { params });
+  //   console.log("body:", body);
+  //   await tryFetch("https://api.bilibili.com/x/v3/fav/resource/list", {
+  //     params: { media_id: "2996876205" }
+  //   })
+  //     .then((r) => r.json())
+  //     .then((d) => console.log(d))
+  // }
   const body = await tryFetch(url, { params });
   if (type === Types.MediaType.Video) {
     const link = 'https://www.bilibili.com/video/';
@@ -191,6 +203,43 @@ export async function getMediaInfo(
             name: v.title,
           })),
         };
+      }
+    } else {
+      if (options?.target) {
+        list = [];
+        let count = 1;
+        const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+        // if no ugc season, maybe this is in favorite list
+        for (let i = 0; i * 30 < count;) {
+          // note that there is rate limit
+          const favListBody = await tryFetch(
+            "https://api.bilibili.com/x/v3/fav/resource/list", {
+            params: { media_id: options?.target, pn: i + 1, ps: 30 },
+          });
+          if (count === 1 && favListBody.data.info.media_count > 1)
+            count = favListBody.data.info.media_count;
+          if (count > 1) {
+            const arr = favListBody.data.medias as any[];
+            list = list.concat(...arr.map((item: any, index: number) => ({
+              title: item.title,
+              cover: item.cover,
+              desc: "",
+              url: link + item.bvid,
+              aid: 0,
+              bvid: item.bvid,
+              cid: 0,
+              duration: item.duration,
+              pubtime: item.pubtime,
+              type: Types.MediaType.Video,
+              isTarget: item.bvid === data.bvid,
+              index: index,
+            })));
+            break; // unfixed problem: api rate limit
+          } else {
+            break;
+          }
+          await delay(100); // delay some time to avoid rate limit
+        }
       }
     }
     if (data.rights.is_stein_gate) {
